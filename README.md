@@ -18,10 +18,11 @@ stats are reported for each region of interest (ROI).
 Sample ROI files can be found under the 'data' subdirectory. Note that they use 1-based loci, and
 *must* be sorted by chromosome or contig names.
 
-Dependencies
-------------
+Install
+-------
 The Makefile assumes that you have the samtools source code in an environment variable $SAMDIR. If
-you're working with a fresh install of Ubuntu, then simply follow these steps from your home dir:
+you don't know what that means, and are working with a fresh install of Ubuntu, then simply follow
+these steps from your home directory, or any directory that you have permissions to write into:
 
     sudo apt-get install git libbam-dev zlib1g-dev
     mkdir src
@@ -31,3 +32,8 @@ you're working with a fresh install of Ubuntu, then simply follow these steps fr
     git clone https://github.com/ckandoth/calc-roi-covg.git
     cd calc-roi-covg
     make
+
+Now you can put the resulting binary where your $PATH can find it. If you have su permissions, then I
+recommend dumping it in the system directory for locally compiled packages:
+
+    sudo mv calcRoiCovg /usr/local/bin/
