@@ -29,7 +29,7 @@ these steps from your home directory, or any directory that you have permissions
     cd src
     git clone https://github.com/samtools/samtools.git
     export SAMDIR=$PWD/samtools
-    git clone https://github.com/ckandoth/calc-roi-covg.git
+    git clone https://github.com/ding-lab/calc-roi-covg.git
     cd calc-roi-covg
     make
 
