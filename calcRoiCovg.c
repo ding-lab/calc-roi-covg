@@ -6,6 +6,7 @@
 /// - The totals written at the end count each base only once, even if it is in multiple ROIs
 
 #define _GNU_SOURCE
+#include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include "sam.h"
@@ -22,14 +23,14 @@ enum bp_class_t { AT, CG, CpG, IUB, UNKNOWN };
 
 typedef struct
 {
-  int beg, end; // The start and stop of a region of interest
+  uint32_t beg, end; // The start and stop of a region of interest
   int min_mapq; // Minimum mapping quality of the reads to pileup
   int min_depth_bam1, min_depth_bam2; // Minimum read depth required per bam
   bool *bam1_cvg; // Tags bases in a region of bam1 with the minimum required read-depth
-  int covd_bases; // Counts bases in a region that has the minimum read depth in both bams
-  int base_cnt[4]; // Counts covered bases in an ROI of 4 bp-classes AT, CG, CpG, IUB
-  int tot_covd_bases; // Counts bases in all ROIs that have the minimum read depth in both bams
-  int tot_base_cnt[4]; // Counts covered bases in all ROIs of 4 bp-classes AT, CG, CpG, IUB
+  uint32_t covd_bases; // Counts bases in a region that has the minimum read depth in both bams
+  uint32_t base_cnt[4]; // Counts covered bases in an ROI of 4 bp-classes AT, CG, CpG, IUB
+  uint32_t tot_covd_bases; // Counts bases in all ROIs that have the minimum read depth in both bams
+  uint32_t tot_base_cnt[4]; // Counts covered bases in all ROIs of 4 bp-classes AT, CG, CpG, IUB
   char *ref_seq; // Contains the reference sequence for the entire chromosome a region lies in
   char *bp_class; // This prevents counting the same base twice when ROIs overlap in a chromosome
   int ref_id, ref_len; // A chromosome's ID in the the BAM header hash, and it's length
@@ -48,7 +49,7 @@ static int fetch_func( const bam1_t *b, void *data )
 static int pileup_func_1( uint32_t tid, uint32_t pos, int n, const bam_pileup1_t *pl, void *data )
 {
   pileup_data_t *tmp = (pileup_data_t*)data;
-  if( (int)pos >= tmp->beg && (int)pos < tmp->end )
+  if( pos >= tmp->beg && pos < tmp->end )
   {
     // Count the number of reads that pass the mapping quality threshold across this base
     int i, mapq_n = 0;
@@ -58,7 +59,7 @@ static int pileup_func_1( uint32_t tid, uint32_t pos, int n, const bam_pileup1_t
       if( !base->is_del && base->b->core.qual >= tmp->min_mapq )
         mapq_n++;
     }
-    tmp->bam1_cvg[(int)pos - tmp->beg] = ( mapq_n >= tmp->min_depth_bam1 );
+    tmp->bam1_cvg[pos - tmp->beg] = ( mapq_n >= tmp->min_depth_bam1 );
   }
   return 0;
 }
@@ -67,7 +68,7 @@ static int pileup_func_1( uint32_t tid, uint32_t pos, int n, const bam_pileup1_t
 static int pileup_func_2( uint32_t tid, uint32_t pos, int n, const bam_pileup1_t *pl, void *data )
 {
   pileup_data_t *tmp = (pileup_data_t*)data;
-  if( (int)pos >= tmp->beg && (int)pos < tmp->end && tmp->bam1_cvg[(int)pos - tmp->beg] )
+  if( pos >= tmp->beg && pos < tmp->end && tmp->bam1_cvg[pos - tmp->beg] )
   {
     // Count the number of reads that pass the mapping quality threshold across this base
     int i, mapq_n = 0;
@@ -125,8 +126,11 @@ int main( int argc, char *argv[] )
   if( argc != 6 && argc != 9 )
   {
     fprintf( stderr, "\nUsage: %s <bam1> <bam2> <roi_file> <ref_seq_fasta> <output_file> [min_depth_bam1 min_depth_bam2 min_mapq]", argv[0] );
-    fprintf( stderr, "\nDefaults: min_depth_bam1 = %i, min_depth_bam2 = %i, min_mapq = %i", data.min_depth_bam1, data.min_depth_bam2, data.min_mapq );
-    fprintf( stderr, "\nNOTE: ROI file *must* be sorted by chromosome/contig names\n\n" );
+    fprintf( stderr, "\n\nDefaults: min_depth_bam1 = %i, min_depth_bam2 = %i, min_mapq = %i", data.min_depth_bam1, data.min_depth_bam2, data.min_mapq );
+    fprintf( stderr, "\n\nROI file should be a tab-delimited list of [chrom, start, stop, annotation]" );
+    fprintf( stderr, "\nwhere start and stop are both 1-based chromosomal loci. For example:" );
+    fprintf( stderr, "\n\n20\t44429404\t44429608\tELMO2\nMT\t5903\t7445\tMT-CO1\n" );
+    fprintf( stderr, "\nROI file *must* be sorted by chromosome/contig names\n\n" );
     return 1;
   }
   // Set user-defined min_depths if specified
@@ -187,7 +191,7 @@ int main( int argc, char *argv[] )
   while( getline( &line, &length, roiFp ) != -1 )
   {
     char ref_name[50], gene_name[100];
-    if( sscanf( line, "%s %i %i %s", ref_name, &data.beg, &data.end, gene_name ) == 4 )
+    if( sscanf( line, "%s %lu %lu %s", ref_name, (unsigned long *)&data.beg, (unsigned long *)&data.end, gene_name ) == 4 )
     {
       int ref_id;
       // If this region is valid in bam1, we'll assume it's also valid in bam2
@@ -200,7 +204,7 @@ int main( int argc, char *argv[] )
       {
         --data.beg; // Make the start locus a 0-based coordinate
         ref_id = kh_value( hdr_hash, iter );
-        int bases = data.end - data.beg;
+        uint32_t bases = data.end - data.beg;
         data.covd_bases = data.base_cnt[AT] = data.base_cnt[CG] = data.base_cnt[CpG] = 0;
         data.bam1_cvg = (bool*)calloc( bases, sizeof( bool )); // calloc also sets them to zero
 
@@ -235,8 +239,10 @@ int main( int argc, char *argv[] )
         bam_plbuf_push( 0, buf2 );
         bam_plbuf_destroy( buf2 );
 
-        fprintf( outFp, "%s\t%s:%i-%i\t%i\t%i\t%i\t%i\t%i\n", gene_name, ref_name, data.beg+1, data.end,
-                 bases, data.covd_bases, data.base_cnt[AT], data.base_cnt[CG], data.base_cnt[CpG] );
+        fprintf( outFp, "%s\t%s:%lu-%lu\t%lu\t%lu\t%lu\t%lu\t%lu\n", gene_name, ref_name,
+            (unsigned long)data.beg+1, (unsigned long)data.end, (unsigned long)bases,
+            (unsigned long)data.covd_bases, (unsigned long)data.base_cnt[AT],
+            (unsigned long)data.base_cnt[CG], (unsigned long)data.base_cnt[CpG] );
         free( data.bam1_cvg );
       }
     }
@@ -252,8 +258,8 @@ int main( int argc, char *argv[] )
   }
 
   // The final line in the file contains the non-overlapping base counts across all ROIs
-  fprintf( outFp, "#NonOverlappingTotals\t\t\t%i\t%i\t%i\t%i\n", data.tot_covd_bases,
-           data.tot_base_cnt[AT], data.tot_base_cnt[CG], data.tot_base_cnt[CpG] );
+  fprintf( outFp, "#NonOverlappingTotals\t\t\t%lu\t%lu\t%lu\t%lu\n", (unsigned long)data.tot_covd_bases,
+           (unsigned long)data.tot_base_cnt[AT], (unsigned long)data.tot_base_cnt[CG], (unsigned long)data.tot_base_cnt[CpG] );
 
   // Cleanup
   if( line )
